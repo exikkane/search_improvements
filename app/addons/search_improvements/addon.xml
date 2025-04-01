@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<addon scheme="3.0">
+    <id>search_improvements</id>
+    <version>1.0</version>
+    <priority>10000</priority>
+    <position>0</position>
+    <default_language>en</default_language>
+    <status>active</status>
+    <supplier>A. Larionov | CS-Cart</supplier>
+    <settings edition_type="ROOT">
+        <sections>
+            <section id="general">
+                <items>
+                    <item id="brand_feature_id">
+                        <type>input</type>
+                        <default_value>18</default_value>
+                    </item>
+                </items>
+            </section>
+        </sections>
+    </settings>
+</addon>
