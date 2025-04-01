@@ -12,5 +12,6 @@ msgctxt "Addons::description::search_improvements"
 msgid "Improves the default search functionality. Developed by alarionov | CS-Cart support"
 msgstr "Improves the default search functionality. Developed by alarionov | CS-Cart support"
 
-
-
+msgctxt "SettingsOptions::search_improvements::brand_feature_id"
+msgid "Brand feature id"
+msgstr "Brand feature id"
