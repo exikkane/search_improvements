@@ -2,7 +2,9 @@
 
 use Tygh\Registry;
 
-function fn_search_improvements_get_products($params, $fields, $sortings, &$condition, $join, $sorting, $group_by, $lang_code, $having)
+function fn_search_improvements_additional_fields_in_search(
+    $params, $fields, $sortings, $condition, $join, $sorting, $group_by, &$tmp, $piece, $having, $lang_code
+)
 {
     if (empty($params['q'])) {
         return;
@@ -10,7 +12,6 @@ function fn_search_improvements_get_products($params, $fields, $sortings, &$cond
 
     $query = trim($params['q']);
 
-    // Search by Company Name
     $c_id = db_get_fields("
         SELECT company_id FROM ?:companies 
         WHERE SOUNDEX(company) = SOUNDEX(?s) 
@@ -19,7 +20,7 @@ function fn_search_improvements_get_products($params, $fields, $sortings, &$cond
     );
 
     if (!empty($c_id)) {
-        $condition .= db_quote(' OR products.company_id IN (?n)', $c_id);
+        $tmp .= db_quote(' OR products.company_id IN (?n)', $c_id);
     }
 
     $brand_feature_id = Registry::get('addons.cnc_product.promo_feature_id');
@@ -44,8 +45,7 @@ function fn_search_improvements_get_products($params, $fields, $sortings, &$cond
         );
 
         if (!empty($product_ids)) {
-            $condition .= db_quote(" OR products.product_id IN (?n)", $product_ids);
+            $tmp .= db_quote(' OR products.product_id IN (?n)', $product_ids);
         }
     }
 }
-
