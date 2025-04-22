@@ -2,6 +2,43 @@
 
 use Tygh\Registry;
 
+function fn_search_improvements_relevance_score(array $product, string $term): int {
+    $fields_weight = [
+        'product'           => 100,
+        'short_description' => 80,
+        'full_description'  => 60,
+        'meta_keywords'     => 40,
+        'meta_description'  => 40,
+        'search_words'      => 30,
+        'product_code'      => 20,
+    ];
+
+    $term = mb_strtolower($term);
+    $score = 0;
+
+    foreach ($fields_weight as $field => $weight) {
+        if (!empty($product[$field]) && mb_stripos($product[$field], $term) !== false) {
+            $score += $weight;
+        }
+    }
+
+    return $score;
+}
+
+function fn_search_improvements_get_products_post(&$products, $params, $lang_code)
+{
+    if (empty($params['q'])) {
+        return;
+    }
+
+    $search_term = $params['q'];
+    $search_term_lower = mb_strtolower($search_term);
+
+    usort($products, function($a, $b) use ($search_term_lower) {
+        return fn_search_improvements_relevance_score($b, $search_term_lower) <=> fn_search_improvements_relevance_score($a, $search_term_lower);
+    });
+}
+
 function fn_search_improvements_additional_fields_in_search(
     $params, $fields, $sortings, $condition, $join, $sorting, $group_by, &$tmp, $piece, $having, $lang_code
 )
@@ -26,15 +63,6 @@ function fn_search_improvements_additional_fields_in_search(
     $brand_feature_id = Registry::get('addons.search_improvements.brand_feature_id');
 
     // Search by Feature Variant
-    $f_id = db_get_fields("
-         SELECT pfvd.variant_id FROM ?:product_feature_variant_descriptions as pfvd
-         LEFT JOIN ?:product_feature_variants as pfv
-         ON pfv.variant_id = pfvd.variant_id
-         WHERE pfvd.variant LIKE ?l
-         AND pfv.feature_id = ?i",
-        $query, "%$query%", $brand_feature_id
-    );
-
     $keywords = preg_split('/\s+/', trim($query));
     $like_clauses = [];
     $like_params = [];
