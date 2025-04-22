@@ -2,45 +2,39 @@
 
 use Tygh\Registry;
 
-function fn_search_improvements_relevance_score(array $product, string $term): int {
-    $fields_weight = [
-        'product'           => 100,
-        'short_description' => 80,
-        'full_description'  => 60,
-        'meta_keywords'     => 40,
-        'meta_description'  => 40,
-        'search_words'      => 30,
-        'product_code'      => 20,
-    ];
+function sort_variants_by_query(array $variants, string $query): array {
+    $keywords = preg_split('/\s+/', mb_strtolower(trim($query)));
 
-    $term = mb_strtolower($term);
+    usort($variants, function ($a, $b) use ($keywords) {
+        return relevance_score($b['variant'], $keywords) <=> relevance_score($a['variant'], $keywords);
+    });
+
+    return $variants;
+}
+
+function relevance_score(string $text, array $keywords): int {
+    $text = mb_strtolower($text);
     $score = 0;
 
-    foreach ($fields_weight as $field => $weight) {
-        if (!empty($product[$field]) && mb_stripos($product[$field], $term) !== false) {
-            $score += $weight;
+    foreach ($keywords as $keyword) {
+        $pos = mb_stripos($text, $keyword);
+        if ($pos !== false) {
+            $score += 100 - $pos; // earlier match = higher score
         }
     }
 
     return $score;
 }
 
-function fn_search_improvements_get_products_post(&$products, $params, $lang_code)
+function fn_search_improvements_get_products_before_select(&$params, &$join, &$condition, &$u_condition, &$inventory_condition, &$sortings, &$total, &$items_per_page, &$lang_code, &$having)
 {
-    if (empty($params['q'])) {
-        return;
+    if (!empty($_REQUEST['search_performed']) && empty($_REQUEST['sort_by'])) {
+        $params['sort_by'] = 'relevance';
+        $params['sort_order'] = 'desc';
     }
-
-    $search_term = $params['q'];
-    $search_term_lower = mb_strtolower($search_term);
-
-    usort($products, function($a, $b) use ($search_term_lower) {
-        return fn_search_improvements_relevance_score($b, $search_term_lower) <=> fn_search_improvements_relevance_score($a, $search_term_lower);
-    });
 }
-
 function fn_search_improvements_additional_fields_in_search(
-    $params, $fields, $sortings, $condition, $join, $sorting, $group_by, &$tmp, $piece, $having, $lang_code
+    &$params, $fields, &$sortings, $condition, $join, $sorting, $group_by, &$tmp, $piece, $having, $lang_code
 )
 {
     if (empty($params['q'])) {
@@ -50,19 +44,27 @@ function fn_search_improvements_additional_fields_in_search(
     $query = trim($params['q']);
 
     $c_id = db_get_fields("
-        SELECT company_id FROM ?:companies
-        WHERE SOUNDEX(company) = SOUNDEX(?s)
-        OR company LIKE ?l",
-        $query, "%$query%"
+    SELECT company_id
+    FROM ?:companies
+    WHERE SOUNDEX(company) = SOUNDEX(?s)
+       OR company LIKE ?l
+    ORDER BY
+        CASE
+            WHEN SOUNDEX(company) = SOUNDEX(?s) THEN 10
+            WHEN company LIKE ?l THEN 5
+            ELSE 0
+        END DESC
+    ",
+        $query, "%$query%", $query, "%$query%"
     );
 
     if (!empty($c_id)) {
         $tmp .= db_quote(' OR products.company_id IN (?n)', $c_id);
+        $sortings['relevance'] = "FIELD(products.company_id, '" . join("','", $c_id) . "')";
     }
 
     $brand_feature_id = Registry::get('addons.search_improvements.brand_feature_id');
 
-    // Search by Feature Variant
     $keywords = preg_split('/\s+/', trim($query));
     $like_clauses = [];
     $like_params = [];
@@ -74,30 +76,34 @@ function fn_search_improvements_additional_fields_in_search(
         }
     }
 
-    $where_like = implode(' OR ', $like_clauses);
+    $where_like = !empty(implode(' OR ', $like_clauses)) ? implode(' OR ', $like_clauses) : 1;
 
     $sql = "
-        SELECT pfvd.variant_id
-        FROM ?:product_feature_variant_descriptions AS pfvd
-        LEFT JOIN ?:product_feature_variants AS pfv
-            ON pfv.variant_id = pfvd.variant_id
-        WHERE ($where_like)
-        AND pfv.feature_id = ?i
-    ";
-    $like_params[] = $brand_feature_id;
+    SELECT DISTINCT pfvd.variant_id, pfvd.variant
+    FROM ?:product_feature_variant_descriptions AS pfvd
+    LEFT JOIN ?:product_feature_variants AS pfv
+        ON pfv.variant_id = pfvd.variant_id
+    WHERE ($where_like)
+    AND pfv.feature_id = $brand_feature_id
+";
 
-    $f_id = db_get_fields($sql, ...$like_params);
-
+    $f_id = db_get_array($sql, ...$like_params);
+    $sorted = sort_variants_by_query($f_id, $query);
     if (!empty($f_id)) {
+    $v_ids = array_column($sorted, 'variant_id');
         $product_ids = db_get_fields("
-            SELECT product_id FROM ?:product_features_values
-            WHERE lang_code = 'en'
-            AND variant_id IN (?n)",
-            $f_id
+    SELECT product_id
+    FROM ?:product_features_values
+    WHERE lang_code = 'en'
+    AND variant_id IN (?n)
+    ORDER BY FIELD(variant_id, ?a)",
+            $v_ids, $v_ids
         );
 
         if (!empty($product_ids)) {
+            $sortings['relevance'] = "FIELD(products.product_id, '" . join("','", $product_ids) . "')";
             $tmp .= db_quote(' OR products.product_id IN (?n)', $product_ids);
         }
     }
+
 }
